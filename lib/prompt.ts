@@ -1,5 +1,14 @@
 import { ConversationMessage } from "@/types/conversation";
 import { KnowledgeBase } from "@/types/knowledge";
+import { DEFAULT_SYSTEM_PROMPT } from "@/lib/storage";
+
+export interface RelevantKnowledge {
+  faq: string[];
+  troubleshooting: string[];
+  outOfScope: string[];
+  functionKnowledge: string[];
+  summary: string;
+}
 
 function summarizeKnowledge(knowledgeBase: KnowledgeBase | null) {
   if (!knowledgeBase) {
@@ -16,30 +25,84 @@ function summarizeKnowledge(knowledgeBase: KnowledgeBase | null) {
   ].join("；");
 }
 
+export function buildRelevantKnowledge(question: string, knowledgeBase: KnowledgeBase | null): RelevantKnowledge {
+  if (!knowledgeBase) {
+    return {
+      faq: [],
+      troubleshooting: [],
+      outOfScope: [],
+      functionKnowledge: [],
+      summary: "未导入知识库，可按客服通用规范回复。",
+    };
+  }
+
+  const keywords = question
+    .toLowerCase()
+    .split(/[\s,，。！？;；:：、]+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 1);
+
+  const match = (text: string) => keywords.some((k) => text.toLowerCase().includes(k));
+  const top = 12;
+
+  const faq = knowledgeBase.faqItems
+    .filter((item) => match(`${item.question} ${item.answer}`))
+    .slice(0, top)
+    .map((item) => `Q: ${item.question}\nA: ${item.answer}`);
+
+  const troubleshooting = knowledgeBase.troubleshootingItems
+    .filter((item) => match(`${item.issue} ${item.solution}`))
+    .slice(0, top)
+    .map((item) => `Issue: ${item.issue}\nSolution: ${item.solution}`);
+
+  const outOfScope = knowledgeBase.outOfScopeItems
+    .filter((item) => match(`${item.pattern} ${item.response}`))
+    .slice(0, top)
+    .map((item) => `Pattern: ${item.pattern}\nResponse: ${item.response}`);
+
+  const functionKnowledge = knowledgeBase.functionKnowledge
+    .filter((item) => match(`${item.functionName} ${item.detail}`))
+    .slice(0, top)
+    .map((item) => `${item.functionName}: ${item.detail}`);
+
+  const summary =
+    faq.length + troubleshooting.length + outOfScope.length + functionKnowledge.length > 0
+      ? "已找到相关知识条目，请优先使用这些条目生成可发给客户的回复。"
+      : `未找到强匹配知识条目。知识库统计：${summarizeKnowledge(knowledgeBase)}。请按 DICloak 客服规范回复。`;
+
+  return { faq, troubleshooting, outOfScope, functionKnowledge, summary };
+}
+
 export function buildSupportPrompt(params: {
   question: string;
   history: ConversationMessage[];
-  knowledgeBase: KnowledgeBase | null;
+  systemPrompt?: string;
+  relevantKnowledge: RelevantKnowledge;
 }) {
   const historyText = params.history
-    .slice(-10)
+    .slice(-12)
     .map((m) => `${m.role === "user" ? "客户" : "客服"}: ${m.content}`)
     .join("\n");
 
-  const knowledgeSummary = summarizeKnowledge(params.knowledgeBase);
+  const prompt = params.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
 
-  return `你是 DICloak 客服助手，请直接输出可发给客户的专业回复。\n\n客户问题：${params.question}\n\n历史上下文：\n${historyText || "无"}\n\n知识库摘要：\n${knowledgeSummary}\n\n输出格式必须严格如下：\n问题类型：xxx\n\n回复1：\nxxx\n\n回复2：\nxxx\n\n回复3：\nxxx\n\n规则：\n1) 只输出可直接发送给客户的内容。\n2) 禁止输出内部分析过程。\n3) 禁止出现“根据知识库”“我查询到”“匹配到”“判断依据”等表达。\n4) 三条回复互相独立，回复2/3不要使用“此外”“另外”“除此之外”。\n5) 若超出 DICloak 业务范围，给出礼貌超范围说明。\n6) 若信息不足，优先生成追问式回复。`;
+  return `${prompt}\n\n当前客户问题：\n${params.question}\n\n历史上下文：\n${historyText || "无"}\n\n相关知识：\n${JSON.stringify(params.relevantKnowledge, null, 2)}`;
 }
 
 export function parseAssistantBlocks(content: string) {
-  const blocks = content
-    .split(/\n\s*\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const issueTypeMatch = content.match(/问题类型\s*[：:]\s*([\s\S]*?)(?:\n\s*\n|$)/);
+  const issueType = issueTypeMatch?.[1]?.trim() || "未识别";
 
-  const issueType = blocks[0] ?? "问题类型：未识别";
-  const replies = blocks.slice(1, 4);
-  return { issueType, replies };
+  const replies = [1, 2, 3].map((index) => {
+    const re = new RegExp(`回复${index}\\s*[：:]\\s*([\\s\\S]*?)(?=\\n\\s*回复[123]\\s*[：:]|$)`, "i");
+    const matched = content.match(re)?.[1]?.trim();
+    return matched || `（未返回回复${index}内容）`;
+  });
+
+  return {
+    issueType: `问题类型：${issueType}`,
+    replies,
+  };
 }
 
 export function stripReplyTitle(text: string) {
