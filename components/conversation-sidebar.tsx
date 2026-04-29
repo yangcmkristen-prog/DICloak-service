@@ -20,7 +20,7 @@ export function ConversationSidebar({ conversations, activeId, onCreate, onDelet
   const [draftTitle, setDraftTitle] = useState("");
 
   return (
-    <aside className="space-y-3">
+    <aside className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
       <Button onClick={onCreate} className="w-full">
         <Plus className="mr-1 h-4 w-4" /> 新建对话
       </Button>
@@ -59,7 +59,7 @@ export function ConversationSidebar({ conversations, activeId, onCreate, onDelet
               >
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => onDelete(c.id)}>
+              <Button variant="destructive" size="sm" onClick={() => onDelete(c.id)}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
