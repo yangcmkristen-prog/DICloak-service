@@ -8,6 +8,7 @@ import {
   OutOfScopeItem,
   TermItem,
   TroubleshootingItem,
+  UploadedKnowledgeFile,
 } from "@/types/knowledge";
 
 function normalizeKey(value: string) {
@@ -25,7 +26,20 @@ function pick(row: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
-export async function parseKnowledgeExcel(file: File): Promise<KnowledgeBase> {
+export function emptyKnowledgeBase(): KnowledgeBase {
+  return {
+    faqItems: [],
+    troubleshootingItems: [],
+    outOfScopeItems: [],
+    mappingItems: [],
+    functionKnowledge: [],
+    termItems: [],
+    uploadedFiles: [],
+    lastUpdated: Date.now(),
+  };
+}
+
+export async function parseKnowledgeExcel(file: File) {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer);
 
@@ -43,58 +57,63 @@ export async function parseKnowledgeExcel(file: File): Promise<KnowledgeBase> {
 
     rows.forEach((row) => {
       if (normalizedName === "feature_faq") {
-        faqItems.push({
-          id: uuidv4(),
-          question: pick(row, ["question", "问题", "faq", "ask"]),
-          answer: pick(row, ["answer", "回答", "回复", "solution"]),
-          raw: row,
-        });
+        faqItems.push({ id: uuidv4(), question: pick(row, ["question", "问题", "faq", "ask"]), answer: pick(row, ["answer", "回答", "回复", "solution"]), raw: row });
       } else if (normalizedName === "troubleshooting") {
-        troubleshootingItems.push({
-          id: uuidv4(),
-          issue: pick(row, ["issue", "problem", "问题", "现象"]),
-          solution: pick(row, ["solution", "处理", "answer", "排查"]),
-          raw: row,
-        });
+        troubleshootingItems.push({ id: uuidv4(), issue: pick(row, ["issue", "problem", "问题", "现象"]), solution: pick(row, ["solution", "处理", "answer", "排查"]), raw: row });
       } else if (normalizedName === "out_of_scope") {
-        outOfScopeItems.push({
-          id: uuidv4(),
-          pattern: pick(row, ["pattern", "question", "关键词", "问题"]),
-          response: pick(row, ["response", "answer", "回复", "建议"]),
-          raw: row,
-        });
+        outOfScopeItems.push({ id: uuidv4(), pattern: pick(row, ["pattern", "question", "关键词", "问题"]), response: pick(row, ["response", "answer", "回复", "建议"]), raw: row });
       } else if (normalizedName === "mapping" || normalizedName === "user_routing") {
-        mappingItems.push({
-          id: uuidv4(),
-          input: pick(row, ["input", "question", "query", "问题"]),
-          mappedType: pick(row, ["mappedtype", "type", "分类", "route"]),
-          raw: row,
-        });
+        mappingItems.push({ id: uuidv4(), input: pick(row, ["input", "question", "query", "问题"]), mappedType: pick(row, ["mappedtype", "type", "分类", "route"]), raw: row });
       } else if (normalizedName === "function_knowledge") {
-        functionKnowledge.push({
-          id: uuidv4(),
-          functionName: pick(row, ["function", "name", "功能", "模块"]),
-          detail: pick(row, ["detail", "description", "说明", "知识"]),
-          raw: row,
-        });
-      } else if (normalizedName === "term" || (normalizedName === "sheet1" && !workbook.SheetNames.includes("term"))) {
-        termItems.push({
-          id: uuidv4(),
-          term: pick(row, ["term", "术语", "关键词", "词条"]),
-          definition: pick(row, ["definition", "解释", "说明", "含义"]),
-          raw: row,
-        });
+        functionKnowledge.push({ id: uuidv4(), functionName: pick(row, ["function", "name", "功能", "模块"]), detail: pick(row, ["detail", "description", "说明", "知识"]), raw: row });
+      } else if (normalizedName === "term" || (normalizedName === "sheet1" && !workbook.SheetNames.map((x) => x.toLowerCase()).includes("term"))) {
+        termItems.push({ id: uuidv4(), term: pick(row, ["term", "术语", "关键词", "词条"]), definition: pick(row, ["definition", "解释", "说明", "含义"]), raw: row });
       }
     });
   }
 
-  return {
-    faqItems,
-    troubleshootingItems,
-    outOfScopeItems,
-    mappingItems,
-    functionKnowledge,
-    termItems,
-    lastUpdated: Date.now(),
+  const stats = {
+    faqItems: faqItems.length,
+    troubleshootingItems: troubleshootingItems.length,
+    outOfScopeItems: outOfScopeItems.length,
+    mappingItems: mappingItems.length,
+    functionKnowledge: functionKnowledge.length,
+    termItems: termItems.length,
   };
+
+  const uploadedFile: UploadedKnowledgeFile = {
+    id: uuidv4(),
+    name: file.name,
+    size: file.size,
+    uploadedAt: Date.now(),
+    stats,
+  };
+
+  return {
+    knowledge: {
+      faqItems,
+      troubleshootingItems,
+      outOfScopeItems,
+      mappingItems,
+      functionKnowledge,
+      termItems,
+      uploadedFiles: [uploadedFile],
+      lastUpdated: Date.now(),
+    } satisfies KnowledgeBase,
+    uploadedFile,
+  };
+}
+
+export function mergeKnowledge(base: KnowledgeBase | null, incoming: KnowledgeBase[]) {
+  const seed = base ?? emptyKnowledgeBase();
+  return incoming.reduce<KnowledgeBase>((acc, item) => ({
+    faqItems: [...acc.faqItems, ...item.faqItems],
+    troubleshootingItems: [...acc.troubleshootingItems, ...item.troubleshootingItems],
+    outOfScopeItems: [...acc.outOfScopeItems, ...item.outOfScopeItems],
+    mappingItems: [...acc.mappingItems, ...item.mappingItems],
+    functionKnowledge: [...acc.functionKnowledge, ...item.functionKnowledge],
+    termItems: [...acc.termItems, ...item.termItems],
+    uploadedFiles: [...(acc.uploadedFiles ?? []), ...(item.uploadedFiles ?? [])],
+    lastUpdated: Date.now(),
+  }), seed);
 }
