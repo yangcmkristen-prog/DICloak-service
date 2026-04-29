@@ -21,24 +21,30 @@ export function ReplyCards({ issueType, replies }: { issueType: string; replies:
   );
 }
 
-function ReplyCard({ title, content }: { title: string; content: string }) {
-  const [copied, setCopied] = useState(false);
+export function ReplyCard({ title, content }: { title: string; content: string }) {
+  const [tip, setTip] = useState("");
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(stripReplyTitle(content));
+      setTip("已复制");
+    } catch {
+      setTip("复制失败，请手动复制");
+    } finally {
+      setTimeout(() => setTip(""), 1500);
+    }
+  };
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{title}</CardTitle>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            await navigator.clipboard.writeText(stripReplyTitle(content));
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1200);
-          }}
-        >
-          {copied ? "已复制" : "复制"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {tip && <span className="text-xs text-[var(--muted-foreground)]">{tip}</span>}
+          <Button variant="outline" size="sm" onClick={copy}>
+            复制
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="whitespace-pre-wrap text-sm">{content}</CardContent>
     </Card>
