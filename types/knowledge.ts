@@ -33,6 +33,21 @@ export interface TermItem extends BaseKnowledgeItem {
   definition: string;
 }
 
+export interface UploadedKnowledgeFile {
+  id: string;
+  name: string;
+  size: number;
+  uploadedAt: number;
+  stats: {
+    faqItems: number;
+    troubleshootingItems: number;
+    outOfScopeItems: number;
+    mappingItems: number;
+    functionKnowledge: number;
+    termItems: number;
+  };
+}
+
 export interface KnowledgeBase {
   faqItems: FAQItem[];
   troubleshootingItems: TroubleshootingItem[];
@@ -40,5 +55,6 @@ export interface KnowledgeBase {
   mappingItems: MappingItem[];
   functionKnowledge: FunctionKnowledge[];
   termItems: TermItem[];
+  uploadedFiles?: UploadedKnowledgeFile[];
   lastUpdated: number;
 }
